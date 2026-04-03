@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   exporterRapportGlobalPDF,
@@ -225,7 +225,17 @@ export default function Rapports() {
     superviseurData[c.superviseur].nbChantiers += 1;
   });
   const superviseurs = Object.keys(superviseurData);
-  if (!superviseurSel && superviseurs.length > 0) setSuperviseurSel(superviseurs[0]);
+
+  useEffect(() => {
+    if (!superviseurs.length) {
+      if (superviseurSel) setSuperviseurSel('');
+      return;
+    }
+
+    if (!superviseurSel || !superviseurs.includes(superviseurSel)) {
+      setSuperviseurSel(superviseurs[0]);
+    }
+  }, [superviseurs, superviseurSel]);
 
   const depenseParMois: Record<string, number> = {};
   depenses.forEach(d => {
