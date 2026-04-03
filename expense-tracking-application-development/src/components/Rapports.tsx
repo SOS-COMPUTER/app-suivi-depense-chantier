@@ -5,13 +5,15 @@ import {
   exporterRapportChantierPDF,
   exporterRapportSuperviseurPDF,
 } from '../utils/exportPDF';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import { Chantier, Depense, Devise } from '../types';
 
 const COULEURS_CATEGORIE = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#6B7280'];
 
 type OngletType = 'global' | 'chantier' | 'superviseur';
 
-// ─── Utilitaires CSV ───────────────────────────────────────────────────────────
+// ─── Utilitaires Excel ─────────────────────────────────────────────────────────
 const TAUX = 2800;
 
 function fm(montant: number, devise: Devise): string {
@@ -24,84 +26,77 @@ function pct(a: number, b: number): string {
   return `${((a / b) * 100).toFixed(1)}%`;
 }
 
-function cel(val: string | number): string {
-  const s = String(val ?? '');
-  if (s.includes(';') || s.includes('"') || s.includes('\n')) {
-    return '"' + s.replace(/"/g, '""') + '"';
-  }
-  return s;
+function row(...cols: (string | number)[]): (string | number)[] {
+  return cols;
 }
 
-function row(...cols: (string | number)[]): string {
-  return cols.map(cel).join(';') + '\n';
+function sanitizeSheetName(name: string): string {
+  return name.replace(/[\\/*?:[\]]/g, ' ').trim().slice(0, 31) || 'Rapport';
 }
 
-function downloadCSV(content: string, filename: string) {
+function downloadExcel(rows: (string | number)[][], filename: string, sheetName: string) {
   try {
-    const BOM = '\uFEFF';
-    const full = BOM + content;
-    const blob = new Blob([full], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename + '.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(sheetName));
+
+    const file = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([file], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    saveAs(blob, `${filename}.xlsx`);
   } catch (e) {
-    console.error('Erreur téléchargement CSV:', e);
+    console.error('Erreur téléchargement Excel:', e);
     alert('Erreur lors du téléchargement. Veuillez réessayer.');
   }
 }
 
-// ─── Export Global CSV ────────────────────────────────────────────────────────
-function exportGlobalCSV(chantiers: Chantier[], depenses: Depense[], devise: Devise) {
+// ─── Export Global Excel ──────────────────────────────────────────────────────
+function exportGlobalExcel(chantiers: Chantier[], depenses: Depense[], devise: Devise) {
   const date = new Date().toLocaleDateString('fr-FR');
   const totalBudget = chantiers.reduce((s, c) => s + c.budget, 0);
   const totalDepense = depenses.reduce((s, d) => s + d.montant, 0);
-  let csv = '';
+  const rows: (string | number)[][] = [];
 
-  csv += row('RAPPORT GLOBAL - SUIVI DES DEPENSES DE CHANTIERS');
-  csv += row('Date edition:', date, 'Devise:', devise === 'USD' ? 'Dollar (USD)' : 'Franc Congolais (CDF)');
-  csv += row('Taux:', '1 USD = 2800 CDF');
-  csv += '\n';
+  rows.push(row('RAPPORT GLOBAL - SUIVI DES DEPENSES DE CHANTIERS'));
+  rows.push(row('Date edition:', date, 'Devise:', devise === 'USD' ? 'Dollar (USD)' : 'Franc Congolais (CDF)'));
+  rows.push(row('Taux:', '1 USD = 2800 CDF'));
+  rows.push([]);
 
-  csv += row('=== RESUME FINANCIER ===');
-  csv += row('Budget Total', fm(totalBudget, devise));
-  csv += row('Total Depense', fm(totalDepense, devise));
-  csv += row('Solde Restant', fm(totalBudget - totalDepense, devise));
-  csv += row('Pct Consomme', pct(totalDepense, totalBudget));
-  csv += row('Nb Chantiers', chantiers.length);
-  csv += row('Nb Depenses', depenses.length);
-  csv += '\n';
+  rows.push(row('=== RESUME FINANCIER ==='));
+  rows.push(row('Budget Total', fm(totalBudget, devise)));
+  rows.push(row('Total Depense', fm(totalDepense, devise)));
+  rows.push(row('Solde Restant', fm(totalBudget - totalDepense, devise)));
+  rows.push(row('Pct Consomme', pct(totalDepense, totalBudget)));
+  rows.push(row('Nb Chantiers', chantiers.length));
+  rows.push(row('Nb Depenses', depenses.length));
+  rows.push([]);
 
-  csv += row('=== DETAIL PAR CHANTIER ===');
-  csv += row('Chantier', 'Lieu', 'Superviseur', 'Statut', 'Budget', 'Depense', 'Solde', 'Pct');
+  rows.push(row('=== DETAIL PAR CHANTIER ==='));
+  rows.push(row('Chantier', 'Lieu', 'Superviseur', 'Statut', 'Budget', 'Depense', 'Solde', 'Pct'));
   chantiers.forEach(c => {
     const dep = depenses.filter(d => d.chantierId === c.id).reduce((s, d) => s + d.montant, 0);
-    csv += row(c.nom, c.lieu, c.superviseur, c.statut, fm(c.budget, devise), fm(dep, devise), fm(c.budget - dep, devise), pct(dep, c.budget));
+    rows.push(row(c.nom, c.lieu, c.superviseur, c.statut, fm(c.budget, devise), fm(dep, devise), fm(c.budget - dep, devise), pct(dep, c.budget)));
   });
-  csv += '\n';
+  rows.push([]);
 
-  csv += row('=== TOUTES LES DEPENSES ===');
-  csv += row('Date', 'Chantier', 'Titre', 'Categorie', 'Fournisseur', 'Montant', 'Description');
+  rows.push(row('=== TOUTES LES DEPENSES ==='));
+  rows.push(row('Date', 'Chantier', 'Titre', 'Categorie', 'Fournisseur', 'Montant', 'Description'));
   [...depenses].sort((a, b) => b.date.localeCompare(a.date)).forEach(d => {
     const ch = chantiers.find(c => c.id === d.chantierId);
-    csv += row(d.date, ch?.nom || '', d.titre, d.categorie, d.fournisseur, fm(d.montant, devise), d.description);
+    rows.push(row(d.date, ch?.nom || '', d.titre, d.categorie, d.fournisseur, fm(d.montant, devise), d.description));
   });
-  csv += row('', '', '', '', 'TOTAL', fm(totalDepense, devise));
-  csv += '\n';
+  rows.push(row('', '', '', '', 'TOTAL', fm(totalDepense, devise)));
+  rows.push([]);
 
   const catMap: Record<string, number> = {};
   depenses.forEach(d => { catMap[d.categorie] = (catMap[d.categorie] || 0) + d.montant; });
-  csv += row('=== PAR CATEGORIE ===');
-  csv += row('Categorie', 'Montant', 'Pct');
+  rows.push(row('=== PAR CATEGORIE ==='));
+  rows.push(row('Categorie', 'Montant', 'Pct'));
   Object.entries(catMap).sort(([, a], [, b]) => b - a).forEach(([nom, val]) => {
-    csv += row(nom, fm(val, devise), pct(val, totalDepense));
+    rows.push(row(nom, fm(val, devise), pct(val, totalDepense)));
   });
-  csv += '\n';
+  rows.push([]);
 
   const supMap: Record<string, { budget: number; dep: number; nb: number }> = {};
   chantiers.forEach(c => {
@@ -111,99 +106,99 @@ function exportGlobalCSV(chantiers: Chantier[], depenses: Depense[], devise: Dev
     supMap[c.superviseur].dep += dep;
     supMap[c.superviseur].nb += 1;
   });
-  csv += row('=== PAR SUPERVISEUR ===');
-  csv += row('Superviseur', 'Nb Chantiers', 'Budget', 'Depense', 'Solde');
+  rows.push(row('=== PAR SUPERVISEUR ==='));
+  rows.push(row('Superviseur', 'Nb Chantiers', 'Budget', 'Depense', 'Solde'));
   Object.entries(supMap).forEach(([sup, d]) => {
-    csv += row(sup, d.nb, fm(d.budget, devise), fm(d.dep, devise), fm(d.budget - d.dep, devise));
+    rows.push(row(sup, d.nb, fm(d.budget, devise), fm(d.dep, devise), fm(d.budget - d.dep, devise)));
   });
 
-  downloadCSV(csv, `Rapport_Global_${date.replace(/\//g, '-')}`);
+  downloadExcel(rows, `Rapport_Global_${date.replace(/\//g, '-')}`, 'Global');
 }
 
-// ─── Export Chantier CSV ──────────────────────────────────────────────────────
-function exportChantierCSV(chantier: Chantier, depenses: Depense[], devise: Devise) {
+// ─── Export Chantier Excel ────────────────────────────────────────────────────
+function exportChantierExcel(chantier: Chantier, depenses: Depense[], devise: Devise) {
   const date = new Date().toLocaleDateString('fr-FR');
   const totalDep = depenses.reduce((s, d) => s + d.montant, 0);
-  let csv = '';
+  const rows: (string | number)[][] = [];
 
-  csv += row('RAPPORT DE CHANTIER - ' + chantier.nom.toUpperCase());
-  csv += row('Date edition:', date, 'Devise:', devise === 'USD' ? 'Dollar (USD)' : 'Franc Congolais (CDF)');
-  csv += '\n';
+  rows.push(row('RAPPORT DE CHANTIER - ' + chantier.nom.toUpperCase()));
+  rows.push(row('Date edition:', date, 'Devise:', devise === 'USD' ? 'Dollar (USD)' : 'Franc Congolais (CDF)'));
+  rows.push([]);
 
-  csv += row('=== FICHE DU CHANTIER ===');
-  csv += row('Nom', chantier.nom);
-  csv += row('Lieu', chantier.lieu);
-  csv += row('Superviseur', chantier.superviseur);
-  csv += row('Statut', chantier.statut);
-  csv += row('Date debut', chantier.dateDebut);
-  csv += row('Date fin', chantier.dateFin);
-  csv += row('Description', chantier.description);
-  csv += '\n';
+  rows.push(row('=== FICHE DU CHANTIER ==='));
+  rows.push(row('Nom', chantier.nom));
+  rows.push(row('Lieu', chantier.lieu));
+  rows.push(row('Superviseur', chantier.superviseur));
+  rows.push(row('Statut', chantier.statut));
+  rows.push(row('Date debut', chantier.dateDebut));
+  rows.push(row('Date fin', chantier.dateFin));
+  rows.push(row('Description', chantier.description));
+  rows.push([]);
 
-  csv += row('=== RESUME FINANCIER ===');
-  csv += row('Budget alloue', fm(chantier.budget, devise));
-  csv += row('Total depense', fm(totalDep, devise));
-  csv += row('Solde restant', fm(chantier.budget - totalDep, devise));
-  csv += row('Pct consomme', pct(totalDep, chantier.budget));
-  csv += row('Nb depenses', depenses.length);
-  csv += '\n';
+  rows.push(row('=== RESUME FINANCIER ==='));
+  rows.push(row('Budget alloue', fm(chantier.budget, devise)));
+  rows.push(row('Total depense', fm(totalDep, devise)));
+  rows.push(row('Solde restant', fm(chantier.budget - totalDep, devise)));
+  rows.push(row('Pct consomme', pct(totalDep, chantier.budget)));
+  rows.push(row('Nb depenses', depenses.length));
+  rows.push([]);
 
-  csv += row('=== LISTE DES DEPENSES ===');
-  csv += row('Date', 'Titre', 'Categorie', 'Fournisseur', 'Montant', 'Description');
+  rows.push(row('=== LISTE DES DEPENSES ==='));
+  rows.push(row('Date', 'Titre', 'Categorie', 'Fournisseur', 'Montant', 'Description'));
   [...depenses].sort((a, b) => b.date.localeCompare(a.date)).forEach(d => {
-    csv += row(d.date, d.titre, d.categorie, d.fournisseur, fm(d.montant, devise), d.description);
+    rows.push(row(d.date, d.titre, d.categorie, d.fournisseur, fm(d.montant, devise), d.description));
   });
-  csv += row('', '', '', 'TOTAL', fm(totalDep, devise));
-  csv += '\n';
+  rows.push(row('', '', '', 'TOTAL', fm(totalDep, devise)));
+  rows.push([]);
 
   const catMap: Record<string, number> = {};
   depenses.forEach(d => { catMap[d.categorie] = (catMap[d.categorie] || 0) + d.montant; });
-  csv += row('=== PAR CATEGORIE ===');
-  csv += row('Categorie', 'Montant', 'Pct');
+  rows.push(row('=== PAR CATEGORIE ==='));
+  rows.push(row('Categorie', 'Montant', 'Pct'));
   Object.entries(catMap).sort(([, a], [, b]) => b - a).forEach(([nom, val]) => {
-    csv += row(nom, fm(val, devise), pct(val, totalDep));
+    rows.push(row(nom, fm(val, devise), pct(val, totalDep)));
   });
 
-  downloadCSV(csv, `Rapport_Chantier_${chantier.nom.replace(/\s+/g, '_')}_${date.replace(/\//g, '-')}`);
+  downloadExcel(rows, `Rapport_Chantier_${chantier.nom.replace(/\s+/g, '_')}_${date.replace(/\//g, '-')}`, chantier.nom);
 }
 
-// ─── Export Superviseur CSV ───────────────────────────────────────────────────
-function exportSuperviseurCSV(superviseur: string, chantiers: Chantier[], depenses: Depense[], devise: Devise) {
+// ─── Export Superviseur Excel ─────────────────────────────────────────────────
+function exportSuperviseurExcel(superviseur: string, chantiers: Chantier[], depenses: Depense[], devise: Devise) {
   const date = new Date().toLocaleDateString('fr-FR');
   const totalDep = depenses.reduce((s, d) => s + d.montant, 0);
   const totalBudget = chantiers.reduce((s, c) => s + c.budget, 0);
-  let csv = '';
+  const rows: (string | number)[][] = [];
 
-  csv += row('RAPPORT SUPERVISEUR - ' + superviseur.toUpperCase());
-  csv += row('Date edition:', date, 'Devise:', devise === 'USD' ? 'Dollar (USD)' : 'Franc Congolais (CDF)');
-  csv += '\n';
+  rows.push(row('RAPPORT SUPERVISEUR - ' + superviseur.toUpperCase()));
+  rows.push(row('Date edition:', date, 'Devise:', devise === 'USD' ? 'Dollar (USD)' : 'Franc Congolais (CDF)'));
+  rows.push([]);
 
-  csv += row('=== RESUME ===');
-  csv += row('Superviseur', superviseur);
-  csv += row('Nb chantiers', chantiers.length);
-  csv += row('Budget total', fm(totalBudget, devise));
-  csv += row('Total depense', fm(totalDep, devise));
-  csv += row('Solde', fm(totalBudget - totalDep, devise));
-  csv += row('Pct consomme', pct(totalDep, totalBudget));
-  csv += '\n';
+  rows.push(row('=== RESUME ==='));
+  rows.push(row('Superviseur', superviseur));
+  rows.push(row('Nb chantiers', chantiers.length));
+  rows.push(row('Budget total', fm(totalBudget, devise)));
+  rows.push(row('Total depense', fm(totalDep, devise)));
+  rows.push(row('Solde', fm(totalBudget - totalDep, devise)));
+  rows.push(row('Pct consomme', pct(totalDep, totalBudget)));
+  rows.push([]);
 
-  csv += row('=== SES CHANTIERS ===');
-  csv += row('Chantier', 'Lieu', 'Statut', 'Budget', 'Depense', 'Solde', 'Pct');
+  rows.push(row('=== SES CHANTIERS ==='));
+  rows.push(row('Chantier', 'Lieu', 'Statut', 'Budget', 'Depense', 'Solde', 'Pct'));
   chantiers.forEach(c => {
     const dep = depenses.filter(d => d.chantierId === c.id).reduce((s, d) => s + d.montant, 0);
-    csv += row(c.nom, c.lieu, c.statut, fm(c.budget, devise), fm(dep, devise), fm(c.budget - dep, devise), pct(dep, c.budget));
+    rows.push(row(c.nom, c.lieu, c.statut, fm(c.budget, devise), fm(dep, devise), fm(c.budget - dep, devise), pct(dep, c.budget)));
   });
-  csv += '\n';
+  rows.push([]);
 
-  csv += row('=== TOUTES LES DEPENSES ===');
-  csv += row('Date', 'Chantier', 'Titre', 'Categorie', 'Fournisseur', 'Montant');
+  rows.push(row('=== TOUTES LES DEPENSES ==='));
+  rows.push(row('Date', 'Chantier', 'Titre', 'Categorie', 'Fournisseur', 'Montant'));
   [...depenses].sort((a, b) => b.date.localeCompare(a.date)).forEach(d => {
     const ch = chantiers.find(c => c.id === d.chantierId);
-    csv += row(d.date, ch?.nom || '', d.titre, d.categorie, d.fournisseur, fm(d.montant, devise));
+    rows.push(row(d.date, ch?.nom || '', d.titre, d.categorie, d.fournisseur, fm(d.montant, devise)));
   });
-  csv += row('', '', '', '', 'TOTAL', fm(totalDep, devise));
+  rows.push(row('', '', '', '', 'TOTAL', fm(totalDep, devise)));
 
-  downloadCSV(csv, `Rapport_Superviseur_${superviseur.replace(/\s+/g, '_')}_${date.replace(/\//g, '-')}`);
+  downloadExcel(rows, `Rapport_Superviseur_${superviseur.replace(/\s+/g, '_')}_${date.replace(/\//g, '-')}`, superviseur);
 }
 
 // ─── Composant Principal ──────────────────────────────────────────────────────
@@ -314,10 +309,10 @@ export default function Rapports() {
                 onClick={() => exporterRapportGlobalPDF(chantiers, depenses, devise)}
               />
               <BtnExport
-                label="Télécharger Excel (CSV)"
+                label="Télécharger Excel (.xlsx)"
                 icon="📊"
                 couleur="bg-emerald-500 text-white hover:bg-emerald-400"
-                onClick={() => exportGlobalCSV(chantiers, depenses, devise)}
+                onClick={() => exportGlobalExcel(chantiers, depenses, devise)}
               />
             </div>
           </div>
@@ -544,10 +539,10 @@ export default function Rapports() {
                   onClick={() => chantierSel && exporterRapportChantierPDF(chantierSel, depensesChantierSel, devise)}
                 />
                 <BtnExport
-                  label="Télécharger Excel (CSV)"
+                  label="Télécharger Excel (.xlsx)"
                   icon="📊"
                   couleur="bg-emerald-500 text-white hover:bg-emerald-400"
-                  onClick={() => chantierSel && exportChantierCSV(chantierSel, depensesChantierSel, devise)}
+                  onClick={() => chantierSel && exportChantierExcel(chantierSel, depensesChantierSel, devise)}
                 />
               </div>
             </div>
@@ -701,10 +696,10 @@ export default function Rapports() {
                   onClick={() => exporterRapportSuperviseurPDF(superviseurSel, chantiersSupSel, depensesSupSel, devise)}
                 />
                 <BtnExport
-                  label="Télécharger Excel (CSV)"
+                  label="Télécharger Excel (.xlsx)"
                   icon="📊"
                   couleur="bg-emerald-500 text-white hover:bg-emerald-400"
-                  onClick={() => exportSuperviseurCSV(superviseurSel, chantiersSupSel, depensesSupSel, devise)}
+                  onClick={() => exportSuperviseurExcel(superviseurSel, chantiersSupSel, depensesSupSel, devise)}
                 />
               </div>
             </div>
