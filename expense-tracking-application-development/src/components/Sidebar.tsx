@@ -46,7 +46,7 @@ export default function Sidebar({ currentPage, onNavigate, mobileOpen, onToggleM
               <HardHat size={20} className="text-white" />
             </div>
             <div>
-              <div className="font-bold text-base leading-tight">ChantierTrack</div>
+              <div className="font-bold text-base leading-tight">M.BUILD ChantierTrack</div>
               <div className="text-xs text-slate-400">Suivi des dépenses</div>
             </div>
           </div>
@@ -118,7 +118,7 @@ export default function Sidebar({ currentPage, onNavigate, mobileOpen, onToggleM
 
         {/* Bottom */}
         <div className="px-4 py-4 border-t border-slate-700">
-          <div className="text-xs text-slate-500 text-center">© 2025 ChantierTrack RDC v1.0</div>
+          <div className="text-xs text-slate-500 text-center">© 2025 M.BUILD ChantierTrack RDC v1.0</div>
         </div>
       </aside>
 
