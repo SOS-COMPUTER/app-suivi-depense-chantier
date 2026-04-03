@@ -1,4 +1,5 @@
 import { Chantier, Depense, Devise } from '../types';
+import { jsPDF } from 'jspdf';
 
 const TAUX = 2800;
 
@@ -14,17 +15,24 @@ function pct(a: number, b: number): string {
 }
 
 function ouvrirFenetrePDF(html: string, _titre: string): void {
-  const win = window.open('', '_blank');
-  if (!win) {
-    alert('Veuillez autoriser les popups pour télécharger le PDF.');
-    return;
-  }
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => {
-    win.print();
-  }, 800);
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  container.style.position = 'fixed';
+  container.style.left = '-99999px';
+  container.style.top = '0';
+  container.style.width = '794px';
+  document.body.appendChild(container);
+
+  const doc = new jsPDF('p', 'mm', 'a4');
+  doc.html(container, {
+    callback: () => {
+      doc.save(`${_titre}.pdf`);
+      document.body.removeChild(container);
+    },
+    margin: [5, 5, 5, 5],
+    autoPaging: 'text',
+    html2canvas: { scale: 0.6 }
+  });
 }
 
 function styleCommun(): string {
@@ -125,9 +133,9 @@ export function exporterRapportGlobalPDF(chantiers: Chantier[], depenses: Depens
       <td style="text-align:center">${pct(val, totalDep)}</td>
     </tr>`).join('');
 
-  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Global - ChantierTrack</title>${styleCommun()}</head><body>
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Global - M.BUILD ChantierTrack</title>${styleCommun()}</head><body>
     <div class="header">
-      <div><h1>🏗️ ChantierTrack</h1><div class="sub">Système de Suivi des Dépenses de Chantiers</div></div>
+      <div><h1>🏗️ M.BUILD ChantierTrack</h1><div class="sub">Système de Suivi des Dépenses de Chantiers</div></div>
       <div class="right"><div><strong>RAPPORT GLOBAL</strong></div><div>Édité le ${dateAujourdhui()}</div><div>Devise : ${devise === 'USD' ? 'Dollar américain (USD)' : 'Franc Congolais (CDF)'}</div></div>
     </div>
     <div class="titre-rapport">📊 Rapport Global — Tous les Chantiers</div>
@@ -168,7 +176,7 @@ export function exporterRapportGlobalPDF(chantiers: Chantier[], depenses: Depens
     </div>
 
     <div class="footer">
-      <span>ChantierTrack — Rapport généré automatiquement</span>
+      <span>M.BUILD ChantierTrack — Rapport généré automatiquement</span>
       <span>Date : ${dateAujourdhui()} | Devise : ${devise}</span>
     </div>
   </body></html>`;
@@ -206,7 +214,7 @@ export function exporterRapportChantierPDF(chantier: Chantier, depenses: Depense
 
   const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Chantier - ${chantier.nom}</title>${styleCommun()}</head><body>
     <div class="header">
-      <div><h1>🏗️ ChantierTrack</h1><div class="sub">Système de Suivi des Dépenses de Chantiers</div></div>
+      <div><h1>🏗️ M.BUILD ChantierTrack</h1><div class="sub">Système de Suivi des Dépenses de Chantiers</div></div>
       <div class="right"><div><strong>RAPPORT PAR CHANTIER</strong></div><div>Édité le ${dateAujourdhui()}</div><div>Devise : ${devise}</div></div>
     </div>
     <div class="titre-rapport">🏗️ ${chantier.nom}</div>
@@ -251,7 +259,7 @@ export function exporterRapportChantierPDF(chantier: Chantier, depenses: Depense
     </div>
 
     <div class="footer">
-      <span>ChantierTrack — ${chantier.nom}</span>
+      <span>M.BUILD ChantierTrack — ${chantier.nom}</span>
       <span>Date : ${dateAujourdhui()} | Devise : ${devise}</span>
     </div>
   </body></html>`;
@@ -297,7 +305,7 @@ export function exporterRapportSuperviseurPDF(superviseur: string, chantiers: Ch
 
   const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Superviseur - ${superviseur}</title>${styleCommun()}</head><body>
     <div class="header">
-      <div><h1>🏗️ ChantierTrack</h1><div class="sub">Système de Suivi des Dépenses de Chantiers</div></div>
+      <div><h1>🏗️ M.BUILD ChantierTrack</h1><div class="sub">Système de Suivi des Dépenses de Chantiers</div></div>
       <div class="right"><div><strong>RAPPORT PAR SUPERVISEUR</strong></div><div>Édité le ${dateAujourdhui()}</div><div>Devise : ${devise}</div></div>
     </div>
     <div class="titre-rapport">👷 Superviseur : ${superviseur}</div>
@@ -329,7 +337,7 @@ export function exporterRapportSuperviseurPDF(superviseur: string, chantiers: Ch
     </div>
 
     <div class="footer">
-      <span>ChantierTrack — Superviseur : ${superviseur}</span>
+      <span>M.BUILD ChantierTrack — Superviseur : ${superviseur}</span>
       <span>Date : ${dateAujourdhui()} | Devise : ${devise}</span>
     </div>
   </body></html>`;
